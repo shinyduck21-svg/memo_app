@@ -354,6 +354,31 @@ h1 i {
     border-color: hsla(140, 75%, 45%, 0.2);
 }
 
+.move-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.move-btn:hover:not(:disabled) {
+    background: hsla(var(--hue), 85%, 60%, 0.12);
+    color: var(--primary);
+    border-color: hsla(var(--hue), 85%, 60%, 0.2);
+}
+
+.move-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
 .delete-btn {
     background: transparent;
     border: 1px solid transparent;

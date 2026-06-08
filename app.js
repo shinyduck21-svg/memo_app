@@ -131,6 +131,12 @@ function renderMemos() {
                     ${timeStr}
                 </div>
                 <div class="memo-actions">
+                    <button class="move-btn" onclick="moveMemoUp(${index})" aria-label="위로 이동" ${index === 0 ? 'disabled' : ''}>
+                        <i class="fa-solid fa-arrow-up"></i>
+                    </button>
+                    <button class="move-btn" onclick="moveMemoDown(${index})" aria-label="아래로 이동" ${index === memos.length - 1 ? 'disabled' : ''}>
+                        <i class="fa-solid fa-arrow-down"></i>
+                    </button>
                     <button class="delete-btn" onclick="deleteMemo(${index})" aria-label="메모 삭제">
                         <i class="fa-regular fa-trash-can"></i>
                     </button>
@@ -163,6 +169,24 @@ function addMemo() {
 function toggleMemo(index) {
     memos[index].completed = !memos[index].completed;
     renderMemos();
+}
+
+function moveMemoUp(index) {
+    if (index > 0) {
+        const temp = memos[index];
+        memos[index] = memos[index - 1];
+        memos[index - 1] = temp;
+        renderMemos();
+    }
+}
+
+function moveMemoDown(index) {
+    if (index < memos.length - 1) {
+        const temp = memos[index];
+        memos[index] = memos[index + 1];
+        memos[index + 1] = temp;
+        renderMemos();
+    }
 }
 
 function deleteMemo(index) {
