@@ -52,27 +52,25 @@ const toastMessage = document.getElementById('toastMessage');
 
 // --- 3. State Management ---
 let memos = [];
-try {
-    const stored = safeStorage.getItem('memos');
-    if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-            memos = parsed.map(item => {
-                if (item === null || item === undefined) return { text: '', timestamp: Date.now(), completed: false };
-                if (typeof item === 'object') {
-                    return {
-                        text: String(item.text || ''),
-                        timestamp: item.timestamp || Date.now(),
-                        completed: !!item.completed
-                    };
-                }
-                return { text: String(item), timestamp: Date.now(), completed: false };
-            });
-        }
+
+const supabaseUrl = 'https://oogaekyovpsvkplsxbak.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vZ2Fla3lvdnBzdmtwbHN4YmFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwODQyMTIsImV4cCI6MjA5NjY2MDIxMn0.-PIo7K7KjjJTIahUzzm2r6z4I0hTdK4kvsO8c0X5hzg';
+const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+async function fetchMemos() {
+    try {
+        const { data, error } = await supabaseClient
+            .from('memos')
+            .select('*')
+            .order('timestamp', { ascending: true });
+            
+        if (error) throw error;
+        memos = data || [];
+        renderMemos();
+    } catch (e) {
+        console.error("Failed to fetch memos:", e);
+        showToast("메모를 불러오는데 실패했습니다.");
     }
-} catch (e) {
-    console.error("Failed to parse stored memos:", e);
-    memos = [];
 }
 
 // --- 4. UI Actions & Functions ---
@@ -141,31 +139,78 @@ function renderMemos() {
     }
     
     if (memoCount) memoCount.textContent = `전체 메모: ${memos.length}개`;
-    safeStorage.setItem('memos', JSON.stringify(memos));
 }
 
-function addMemo() {
+async function addMemo() {
     if (!memoInput) return;
     const content = memoInput.value.trim();
     if (!content) return;
 
-    memos.push({
+    const newMemo = {
         text: content,
         timestamp: Date.now(),
         completed: false
-    });
-    memoInput.value = '';
-    renderMemos();
-    showToast('메모가 추가되었습니다.');
-    memoInput.focus();
+    };
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('memos')
+            .insert([newMemo])
+            .select();
+            
+        if (error) throw error;
+        
+        memos.push(data[0] || newMemo);
+        memoInput.value = '';
+        renderMemos();
+        showToast('메모가 추가되었습니다.');
+        memoInput.focus();
+    } catch (e) {
+        console.error("Error adding memo:", e);
+        showToast('메모 추가에 실패했습니다.');
+    }
 }
 
-function toggleMemo(index) {
-    memos[index].completed = !memos[index].completed;
-    renderMemos();
+async function toggleMemo(index) {
+    const memo = memos[index];
+    const newCompleted = !memo.completed;
+    
+    try {
+        if (memo.id) {
+            const { error } = await supabaseClient
+                .from('memos')
+                .update({ completed: newCompleted })
+                .eq('id', memo.id);
+            if (error) throw error;
+        }
+        
+        memos[index].completed = newCompleted;
+        renderMemos();
+    } catch (e) {
+        console.error("Error toggling memo:", e);
+        showToast("상태 변경에 실패했습니다.");
+    }
 }
 
-function deleteMemo(index) {
+async function deleteMemo(index) {
+    const memo = memos[index];
+    
+    try {
+        if (memo.id) {
+            const { error } = await supabaseClient
+                .from('memos')
+                .delete()
+                .eq('id', memo.id);
+            if (error) throw error;
+        }
+        performUIRemoval(index);
+    } catch (e) {
+        console.error("Error deleting memo:", e);
+        showToast("삭제에 실패했습니다.");
+    }
+}
+
+function performUIRemoval(index) {
     const items = memoList.querySelectorAll('.memo-item');
     if (items[index]) {
         items[index].classList.add('removing');
@@ -180,11 +225,25 @@ function deleteMemo(index) {
     }
 }
 
-function clearAllMemos() {
+async function clearAllMemos() {
     if (confirm('모든 메모를 삭제하시겠습니까?')) {
-        memos = [];
-        renderMemos();
-        showToast('모든 메모가 삭제되었습니다.');
+        try {
+            const ids = memos.map(m => m.id).filter(id => id);
+            if (ids.length > 0) {
+                const { error } = await supabaseClient
+                    .from('memos')
+                    .delete()
+                    .in('id', ids);
+                if (error) throw error;
+            }
+            
+            memos = [];
+            renderMemos();
+            showToast('모든 메모가 삭제되었습니다.');
+        } catch(e) {
+             console.error("Error clearing memos:", e);
+             showToast("삭제에 실패했습니다.");
+        }
     }
 }
 
@@ -213,4 +272,4 @@ document.documentElement.setAttribute('data-theme', savedTheme);
 updateThemeIcon(savedTheme);
 
 // Initial Render
-renderMemos();
+fetchMemos();
