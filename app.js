@@ -21,7 +21,7 @@ function formatDate(timestamp) {
     return `${year}.${month}.${date} ${period} ${displayHour}:${min}`;
 }
 
-// Safe Storage Helper to handle file:// protocol restrictions in some browsers
+// Safe Storage Helper
 const safeStorage = {
     getItem(key) {
         try {
@@ -50,18 +50,74 @@ const themeToggle = document.getElementById('themeToggle');
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toastMessage');
 
+// Auth Elements
+const googleLoginBtn = document.getElementById('googleLoginBtn');
+const userProfile = document.getElementById('userProfile');
+const userName = document.getElementById('userName');
+const logoutBtn = document.getElementById('logoutBtn');
+
 // --- 3. State Management ---
 let memos = [];
+let dragSourceIndex = null;
+let currentUser = null;
 
 const supabaseUrl = 'https://oogaekyovpsvkplsxbak.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vZ2Fla3lvdnBzdmtwbHN4YmFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwODQyMTIsImV4cCI6MjA5NjY2MDIxMn0.-PIo7K7KjjJTIahUzzm2r6z4I0hTdK4kvsO8c0X5hzg';
 const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
+// --- Auth Functions ---
+async function signInWithGoogle() {
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+            redirectTo: window.location.origin + window.location.pathname
+        }
+    });
+    if (error) {
+        console.error("Login failed:", error.message);
+        showToast("로그인에 실패했습니다.");
+    }
+}
+
+async function signOut() {
+    const { error } = await supabaseClient.auth.signOut();
+    if (error) {
+        console.error("Logout failed:", error.message);
+        showToast("로그아웃에 실패했습니다.");
+    } else {
+        showToast("로그아웃 되었습니다.");
+    }
+}
+
+function handleAuthStateChange(session) {
+    if (session) {
+        currentUser = session.user;
+        if (googleLoginBtn) googleLoginBtn.style.display = 'none';
+        if (userProfile) userProfile.style.display = 'flex';
+        if (userName) userName.textContent = currentUser.user_metadata.full_name || currentUser.email;
+        fetchMemos();
+    } else {
+        currentUser = null;
+        if (googleLoginBtn) googleLoginBtn.style.display = 'flex';
+        if (userProfile) userProfile.style.display = 'none';
+        if (userName) userName.textContent = '';
+        memos = [];
+        renderMemos();
+    }
+}
+
+// Check initial session and listen for changes
+supabaseClient.auth.onAuthStateChange((event, session) => {
+    handleAuthStateChange(session);
+});
+
 async function fetchMemos() {
+    if (!currentUser) return;
     try {
         const { data, error } = await supabaseClient
             .from('memos')
             .select('*')
+            .eq('user_id', currentUser.id)
             .order('timestamp', { ascending: true });
             
         if (error) throw error;
@@ -76,6 +132,7 @@ async function fetchMemos() {
 // --- 4. UI Actions & Functions ---
 let toastTimeout;
 function showToast(message) {
+    if (!toast || !toastMessage) return;
     toastMessage.textContent = message;
     toast.classList.add('show');
     
@@ -101,6 +158,18 @@ function renderMemos() {
     if (!memoList) return;
     memoList.innerHTML = '';
     
+    if (!currentUser) {
+        memoList.innerHTML = `
+            <div class="empty-state">
+                <i class="fa-solid fa-lock"></i>
+                <p>로그인 후 메모를 이용하실 수 있습니다.</p>
+            </div>
+        `;
+        if (clearAllBtn) clearAllBtn.style.display = 'none';
+        if (memoCount) memoCount.textContent = '로그인이 필요합니다';
+        return;
+    }
+    
     if (memos.length === 0) {
         memoList.innerHTML = `
             <div class="empty-state">
@@ -115,11 +184,24 @@ function renderMemos() {
         memos.forEach((memo, index) => {
             const li = document.createElement('li');
             li.className = `memo-item ${memo.completed ? 'completed' : ''}`;
+            li.setAttribute('draggable', true);
+            li.dataset.index = index;
+            
+            // Drag and Drop Events
+            li.addEventListener('dragstart', handleDragStart);
+            li.addEventListener('dragover', handleDragOver);
+            li.addEventListener('dragenter', handleDragEnter);
+            li.addEventListener('dragleave', handleDragLeave);
+            li.addEventListener('drop', handleDrop);
+            li.addEventListener('dragend', handleDragEnd);
             
             const timeStr = memo.timestamp ? `<div class="memo-time"><i class="fa-regular fa-clock"></i> ${formatDate(memo.timestamp)}</div>` : '';
             
             li.innerHTML = `
                 <div class="memo-actions">
+                    <div class="move-btn" title="드래그하여 이동">
+                        <i class="fa-solid fa-grip-lines"></i>
+                    </div>
                     <button class="check-btn" onclick="toggleMemo(${index})" aria-label="메모 완료/미완료">
                         <i class="${memo.completed ? 'fa-solid fa-check-circle' : 'fa-regular fa-circle'}"></i>
                     </button>
@@ -141,15 +223,88 @@ function renderMemos() {
     if (memoCount) memoCount.textContent = `전체 메모: ${memos.length}개`;
 }
 
+// --- Drag & Drop Handlers ---
+function handleDragStart(e) {
+    dragSourceIndex = parseInt(this.dataset.index);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragSourceIndex);
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDragEnter(e) {
+    this.classList.add('drag-over');
+}
+
+function handleDragLeave(e) {
+    this.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const targetIndex = parseInt(this.dataset.index);
+    
+    if (dragSourceIndex !== targetIndex) {
+        const movedItem = memos.splice(dragSourceIndex, 1)[0];
+        memos.splice(targetIndex, 0, movedItem);
+        updateMemosOrder();
+        renderMemos();
+    }
+    return false;
+}
+
+function handleDragEnd(e) {
+    const items = document.querySelectorAll('.memo-item');
+    items.forEach(item => {
+        item.classList.remove('dragging');
+        item.classList.remove('drag-over');
+    });
+}
+
+async function updateMemosOrder() {
+    if (!currentUser) return;
+    const originalTimestamps = [...memos].map(m => m.timestamp).sort((a, b) => a - b);
+    
+    try {
+        const updates = memos.map((memo, idx) => {
+            const newTimestamp = originalTimestamps[idx];
+            return supabaseClient
+                .from('memos')
+                .update({ timestamp: newTimestamp })
+                .eq('id', memo.id)
+                .eq('user_id', currentUser.id);
+        });
+        
+        const results = await Promise.all(updates);
+        const errors = results.filter(r => r.error);
+        if (errors.length > 0) throw errors[0].error;
+        
+        showToast('순서가 변경되었습니다.');
+    } catch (e) {
+        console.error("Error updating order:", e);
+        showToast("순서 저장에 실패했습니다.");
+    }
+}
+
 async function addMemo() {
-    if (!memoInput) return;
+    if (!memoInput || !currentUser) return;
     const content = memoInput.value.trim();
     if (!content) return;
 
     const newMemo = {
         text: content,
         timestamp: Date.now(),
-        completed: false
+        completed: false,
+        user_id: currentUser.id
     };
 
     try {
@@ -160,7 +315,12 @@ async function addMemo() {
             
         if (error) throw error;
         
-        memos.push(data[0] || newMemo);
+        if (data && data[0]) {
+            memos.push(data[0]);
+        } else {
+            memos.push(newMemo);
+        }
+        
         memoInput.value = '';
         renderMemos();
         showToast('메모가 추가되었습니다.');
@@ -172,6 +332,7 @@ async function addMemo() {
 }
 
 async function toggleMemo(index) {
+    if (!currentUser) return;
     const memo = memos[index];
     const newCompleted = !memo.completed;
     
@@ -180,7 +341,8 @@ async function toggleMemo(index) {
             const { error } = await supabaseClient
                 .from('memos')
                 .update({ completed: newCompleted })
-                .eq('id', memo.id);
+                .eq('id', memo.id)
+                .eq('user_id', currentUser.id);
             if (error) throw error;
         }
         
@@ -193,6 +355,7 @@ async function toggleMemo(index) {
 }
 
 async function deleteMemo(index) {
+    if (!currentUser) return;
     const memo = memos[index];
     
     try {
@@ -200,7 +363,8 @@ async function deleteMemo(index) {
             const { error } = await supabaseClient
                 .from('memos')
                 .delete()
-                .eq('id', memo.id);
+                .eq('id', memo.id)
+                .eq('user_id', currentUser.id);
             if (error) throw error;
         }
         performUIRemoval(index);
@@ -218,7 +382,7 @@ function performUIRemoval(index) {
             memos.splice(index, 1);
             renderMemos();
             showToast('메모가 삭제되었습니다.');
-        });
+        }, { once: true });
     } else {
         memos.splice(index, 1);
         renderMemos();
@@ -226,16 +390,15 @@ function performUIRemoval(index) {
 }
 
 async function clearAllMemos() {
+    if (!currentUser) return;
     if (confirm('모든 메모를 삭제하시겠습니까?')) {
         try {
-            const ids = memos.map(m => m.id).filter(id => id);
-            if (ids.length > 0) {
-                const { error } = await supabaseClient
-                    .from('memos')
-                    .delete()
-                    .in('id', ids);
-                if (error) throw error;
-            }
+            const { error } = await supabaseClient
+                .from('memos')
+                .delete()
+                .eq('user_id', currentUser.id);
+            
+            if (error) throw error;
             
             memos = [];
             renderMemos();
@@ -248,9 +411,21 @@ async function clearAllMemos() {
 }
 
 // --- 5. Event Listeners & Initialization ---
+if (googleLoginBtn) {
+    googleLoginBtn.addEventListener('click', signInWithGoogle);
+}
+
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', signOut);
+}
+
 if (memoForm) {
     memoForm.addEventListener('submit', (e) => {
         e.preventDefault();
+        if (!currentUser) {
+            showToast("로그인이 필요합니다.");
+            return;
+        }
         addMemo();
     });
 }
@@ -270,6 +445,3 @@ if (themeToggle) {
 const savedTheme = safeStorage.getItem('theme') || 'dark';
 document.documentElement.setAttribute('data-theme', savedTheme);
 updateThemeIcon(savedTheme);
-
-// Initial Render
-fetchMemos();

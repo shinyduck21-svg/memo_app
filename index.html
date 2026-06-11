@@ -19,9 +19,22 @@
         <!-- Header -->
         <header class="header-bar">
             <h1><i class="fa-solid fa-note-sticky"></i> Premium Memo</h1>
-            <button class="theme-btn" id="themeToggle" aria-label="Toggle theme">
-                <i class="fa-solid fa-moon"></i>
-            </button>
+            <div class="header-actions">
+                <div id="authSection">
+                    <button id="googleLoginBtn" class="google-login-btn">
+                        <i class="fa-brands fa-google"></i> Google 로그인
+                    </button>
+                    <div id="userProfile" style="display: none;">
+                        <span id="userName" class="user-name"></span>
+                        <button id="logoutBtn" class="logout-btn" title="로그아웃">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
+                    </div>
+                </div>
+                <button class="theme-btn" id="themeToggle" aria-label="Toggle theme">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
         </header>
 
         <!-- Input Section -->
